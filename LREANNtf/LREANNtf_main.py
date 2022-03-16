@@ -13,12 +13,12 @@ conda create -n anntf2 python=3.7
 source activate anntf2
 conda install -c tensorflow tensorflow=2.3
 conda install scikit-learn (ANNtf2_algorithmLIANN_math:SVD/PCA only)
-	
+
 # Usage:
 python3 LREANNtf_main.py
 
 # Description:
-LREANNtf - train learning rule experiment artificial neural network (LREANN/LIANN)
+LREANNtf - train learning rule experiment artificial neural network (LREANN)
 
 """
 
@@ -32,14 +32,14 @@ import numpy as np
 import sys
 np.set_printoptions(threshold=sys.maxsize)
 
-from ANNtf2_operations import *
+#from ANNtf2_operations import *
+import ANNtf2_operations
 import ANNtf2_globalDefs
 from numpy import random
 import ANNtf2_loadDataset
 
 #select algorithm:
-#algorithm = "LREANN"	#learning rule experiment artificial neural network
-algorithm = "LIANN"	#local inhibition artificial neural network	#incomplete+non-convergent
+algorithm = "LREANN"	#learning rule experiment artificial neural network
 
 suppressGradientDoNotExistForVariablesWarnings = True
 
@@ -70,9 +70,7 @@ if(algorithm == "LREANN"):
 		import LREANNtf_algorithmLREANN_expMUANN as LREANNtf_algorithm		
 	elif(algorithmLREANN == "LREANN_expRUANN"):
 		import LREANNtf_algorithmLREANN_expRUANN as LREANNtf_algorithm
-elif(algorithm == "LIANN"):
-	import ANNtf2_algorithmLIANN as LREANNtf_algorithm	
-						
+							
 #learningRate, trainingSteps, batchSize, displayStep, numEpochs = -1
 
 #performance enhancements for development environment only: 
@@ -103,16 +101,8 @@ if(algorithm == "LREANN"):
 	dataset = "SmallDataset"
 	#trainMultipleNetworks not currently supported
 	trainHebbianBackprop = False	#default: False
-elif(algorithm == "LIANN"):
-	dataset = "SmallDataset"
-	if(LREANNtf_algorithm.learningAlgorithmNone):
-		trainMultipleNetworks = False	#optional
-		if(trainMultipleNetworks):
-			#numberOfNetworks = 10
-			numberOfNetworks = int(100/LREANNtf_algorithm.generateLargeNetworkRatio)	#normalise the number of networks based on the network layer size
-			if(numberOfNetworks == 1):	#train at least 2 networks (required for tensorflow code execution consistency)
-				trainMultipleNetworks = False
-				
+
+								
 if(dataset == "SmallDataset"):
 	smallDatasetIndex = 0 #default: 0 (New Thyroid)
 	#trainMultipleFiles = False	#required
@@ -152,6 +142,9 @@ datasetFileNameEnd = ".dat"
 xmlDatasetFileNameEnd = ".xml"
 
 
+def generateTFtrainDataFromNParrays(train_x, train_y, shuffleSize, batchSize, datasetNumClasses=None):
+	return ANNtf2_operations.generateTFtrainDataFromNParrays(train_x, train_y, shuffleSize, batchSize)
+		
 def defineTrainingParameters(dataset, numberOfFeaturesPerWord=None, paddingTagIndex=None):
 	return LREANNtf_algorithm.defineTrainingParameters(dataset)
 
@@ -204,105 +197,19 @@ def executeLearningLREANN_expXUANN(x, y, samplePositiveX, samplePositiveY, sampl
 	#learning algorithm: perform contrast training (diff of interclass experience with current experience, and diff of extraclass experience with current experience) at each layer of network
 	pred = LREANNtf_algorithm.neuralNetworkPropagationLREANN_expXUANNtrain(x, y, samplePositiveX, samplePositiveY, sampleNegativeX, sampleNegativeY, networkIndex)
 
-#algorithm !LREANN:
-def trainBatch(e, batchIndex, batchX, batchY, datasetNumClasses, numberOfLayers, optimizer, networkIndex, costCrossEntropyWithLogits, display):
-	
-	if(algorithm == "LIANN"):
-		executeFinalLayerHebbianLearning = False
-		if(LREANNtf_algorithm.learningAlgorithmFinalLayerBackpropHebbian):
-			executeFinalLayerHebbianLearning = True
-			if(LREANNtf_algorithm.supportDimensionalityReduction):
-				if(LREANNtf_algorithm.supportDimensionalityReductionFirstPhaseOnly):
-					if(e < LREANNtf_algorithm.supportDimensionalityReductionFirstPhaseOnlyNumEpochs):
-						executeFinalLayerHebbianLearning = False
-
-		#print("trainMultipleFiles error: does not support greedy training for LUANN")
-		if(executeFinalLayerHebbianLearning):
-			#print("executeFinalLayerHebbianLearning")	
-			if(trainMultipleNetworks):	#not currently supported by LREANNtf:ANNtf2_algorithmLIANN
-				#LREANNtf_algorithm.neuralNetworkPropagationLUANNallLayers(batchX, networkIndex)	#propagate without performing final layer optimisation	#why executed?
-				pass
-			else:
-				executeOptimisation(batchX, batchY, datasetNumClasses, numberOfLayers, optimizer, networkIndex)
-
-		executeLearningLIANN(e, batchIndex, batchX, batchY, networkIndex)
-	else:
-		print("trainBatch only supports LIANN")
-		exit()						
 			
-	pred = None
-	if(display):
-		if(not trainMultipleNetworks):
-			loss, acc = calculatePropagationLoss(batchX, batchY, datasetNumClasses, numberOfLayers, costCrossEntropyWithLogits, networkIndex)	#display final layer loss
-			print("networkIndex: %i, batchIndex: %i, loss: %f, accuracy: %f" % (networkIndex, batchIndex, loss, acc))
-					
-	#if(algorithm == "LIANN"):
-	#	#first learning algorithm: perform neuron independence training
-	#	batchYoneHot = tf.one_hot(batchY, depth=datasetNumClasses)
-	#	if(not LREANNtf_algorithm.learningAlgorithmNone):
-	#		executeLearningLIANN(batchIndex, batchX, batchYoneHot, networkIndex)
-	#	if(LREANNtf_algorithm.learningAlgorithmFinalLayerBackpropHebbian):
-	#		#second learning algorithm (final layer hebbian connections to output class targets):
-	#		executeOptimisation(batchX, batchY, datasetNumClasses, numberOfLayers, optimizer, networkIndex)	
-	#		#print("executeOptimisation")
-	#else:
-	#	print("trainBatch only supports LIANN")
-	#	exit()
-	#	
-	#if(display):
-	#	loss, acc = calculatePropagationLoss(batchX, batchY, datasetNumClasses, numberOfLayers, costCrossEntropyWithLogits, networkIndex)
-	#	print("networkIndex: %i, batchIndex: %i, loss: %f, accuracy: %f" % (networkIndex, batchIndex, loss, acc))
-			
-def executeLearningLIANN(e, batchIndex, x, y, networkIndex):
-	#if(LREANNtf_algorithm.supportDimensionalityReduction):
-	executeLIANN = False
-	if(LREANNtf_algorithm.supportDimensionalityReductionFirstPhaseOnly):
-		if(e < LREANNtf_algorithm.supportDimensionalityReductionFirstPhaseOnlyNumEpochs):
-			executeLIANN = True			
-	elif(LREANNtf_algorithm.supportDimensionalityReductionLimitFrequency):
-		if(batchIndex % LREANNtf_algorithm.supportDimensionalityReductionLimitFrequencyStep == 0):
-			executeLIANN = True
-	else:
-		executeLIANN = True
-	if(executeLIANN):
-		#print("executeLIANN")
-		#LREANNtf_algorithm.neuralNetworkPropagationLUANNdimensionalityReduction(batchX, batchY, networkIndex)	
-		pred = LREANNtf_algorithm.neuralNetworkPropagationLIANNtrainIntro(x, y, networkIndex)
 
-	#executeLIANN = False
-	#if(LREANNtf_algorithm.supportDimensionalityReductionLimitFrequency):
-	#	if(batchIndex % LREANNtf_algorithm.supportDimensionalityReductionLimitFrequencyStep == 0):
-	#		executeLIANN = True
-	#else:
-	#	executeLIANN = True
-	#if(executeLIANN):
-	#	#first learning algorithm: perform neuron independence training
-	#	pred = LREANNtf_algorithm.neuralNetworkPropagationLIANNtrainIntro(x, networkIndex)
-
-
+#def executeLearningLREANN(e, batchIndex, x, y, networkIndex):
+#	pred = LREANNtf_algorithm.neuralNetworkPropagationLREANNtrainIntro(x, y, networkIndex)
+		
 #parameter l is only currently used for algorithm AEANN
-def executeOptimisation(x, y, datasetNumClasses, numberOfLayers, optimizer, networkIndex=1):
+def executeOptimisation(x, y, datasetNumClasses, numberOfLayers, optimizer, networkIndex=1, l=None):
 	with tf.GradientTape() as gt:
-		loss, acc = calculatePropagationLoss(x, y, datasetNumClasses, numberOfLayers, costCrossEntropyWithLogits, networkIndex)
+		loss, acc = calculatePropagationLoss(x, y, datasetNumClasses, numberOfLayers, costCrossEntropyWithLogits, networkIndex, l)
 		
 	if(algorithm == "LREANN"):
 		print("executeOptimisation error: algorithm LREANN not supported, use executeLearningLREANN() instead")
 		exit()
-	elif(algorithm == "LIANN"):
-		#second learning algorithm (final layer hebbian connections to output class targets):
-		Wlist = []
-		Blist = []
-		for l in range(1, numberOfLayers+1):
-			if(LREANNtf_algorithm.learningAlgorithmFinalLayerBackpropHebbian):
-				if(l == numberOfLayers):
-					Wlist.append(LREANNtf_algorithm.W[generateParameterNameNetwork(networkIndex, l, "W")])
-					Blist.append(LREANNtf_algorithm.B[generateParameterNameNetwork(networkIndex, l, "B")])				
-			else:	
-				Wlist.append(LREANNtf_algorithm.W[generateParameterNameNetwork(networkIndex, l, "W")])
-				Blist.append(LREANNtf_algorithm.B[generateParameterNameNetwork(networkIndex, l, "B")])
-		trainableVariables = Wlist + Blist
-		WlistLength = len(Wlist)
-		BlistLength = len(Blist)
 			
 	gradients = gt.gradient(loss, trainableVariables)
 						
@@ -316,19 +223,19 @@ def executeOptimisation(x, y, datasetNumClasses, numberOfLayers, optimizer, netw
 		optimizer.apply_gradients(zip(gradients, trainableVariables))
 		
 
-def calculatePropagationLoss(x, y, datasetNumClasses, numberOfLayers, costCrossEntropyWithLogits, networkIndex=1):
+def calculatePropagationLoss(x, y, datasetNumClasses, numberOfLayers, costCrossEntropyWithLogits, networkIndex=1, l=None):
+	
 	acc = 0	#only valid for softmax class targets 
 	pred = neuralNetworkPropagation(x, networkIndex)
 	target = y
-	loss = calculateLossCrossEntropy(pred, target, datasetNumClasses, costCrossEntropyWithLogits)	
-	acc = calculateAccuracy(pred, target)	#only valid for softmax class targets 
+	loss = ANNtf2_operations.calculateLossCrossEntropy(pred, target, datasetNumClasses, costCrossEntropyWithLogits)	
+	acc = ANNtf2_operations.calculateAccuracy(pred, target)	#only valid for softmax class targets 
 	#print("x = ", x)
 	#print("y = ", y)
 	#print("2 loss = ", loss)
 	#print("2 acc = ", acc)
 			
 	return loss, acc
-
 
 
 #if(LREANNtf_algorithm.supportMultipleNetworks):
@@ -465,10 +372,10 @@ def trainMinimal():
 		fileIndex = 0
 		numberOfFeaturesPerWord, paddingTagIndex, datasetNumFeatures, datasetNumClasses, datasetNumExamples, train_x, train_y, test_x, test_y = loadDataset(fileIndex)
 
-		shuffleSize = datasetNumExamples	#heuristic: 10*batchSize
+		shuffleSize = datasetNumExamples
 		trainDataIndex = 0
 
-		trainData = generateTFtrainDataFromNParrays(train_x, train_y, shuffleSize, batchSize)
+		trainData = generateTFtrainDataFromNParrays(train_x, train_y, shuffleSize, batchSize, datasetNumClasses)
 		trainDataList = []
 		trainDataList.append(trainData)
 		trainDataListIterators = []
@@ -541,19 +448,20 @@ def train(trainMultipleNetworks=False, trainMultipleFiles=False, greedy=False):
 				
 			numberOfFeaturesPerWord, paddingTagIndex, datasetNumFeatures, datasetNumClasses, datasetNumExamples, train_x, train_y, test_x, test_y = loadDataset(fileIndex)
 
-			shuffleSize = datasetNumExamples	#heuristic: 10*batchSize
+			shuffleSize = datasetNumExamples
 			trainDataIndex = 0
 
 			#greedy code [not used by LREANNtf, retained for cross compatibility];
 			for l in range(1, maxLayer+1):
 				print("l = ", l)
-				trainData = generateTFtrainDataFromNParrays(train_x, train_y, shuffleSize, batchSize)
+				trainData = generateTFtrainDataFromNParrays(train_x, train_y, shuffleSize, batchSize, datasetNumClasses)
 				trainDataList = []
 				trainDataList.append(trainData)
 				trainDataListIterators = []
 				for trainData in trainDataList:
+					print("trainData index x")
 					trainDataListIterators.append(iter(trainData))
-				testBatchX, testBatchY = generateTFbatch(test_x, test_y, batchSize)
+				testBatchX, testBatchY = ANNtf2_operations.generateTFbatch(test_x, test_y, batchSize)
 				#testBatchX, testBatchY = (test_x, test_y)
 
 				for batchIndex in range(int(trainingSteps)):
@@ -565,7 +473,7 @@ def train(trainMultipleNetworks=False, trainMultipleFiles=False, greedy=False):
 						#if(l == maxLayer):	#only print accuracy after training final layer
 						if(batchIndex % displayStep == 0):
 							display = True	
-						trainBatch(e, batchIndex, batchX, batchY, datasetNumClasses, numberOfLayers, optimizer, networkIndex, costCrossEntropyWithLogits, display)
+						trainBatch(e, batchIndex, batchX, batchY, datasetNumClasses, numberOfLayers, optimizer, networkIndex, costCrossEntropyWithLogits, display, l)
 						
 					#trainMultipleNetworks code;
 					if(trainMultipleNetworks):
@@ -622,9 +530,9 @@ def trainLRE():
 
 		numberOfFeaturesPerWord, paddingTagIndex, datasetNumFeatures, datasetNumClasses, datasetNumExamples, train_x, train_y, test_x, test_y = loadDataset(fileIndex)
 
-		testBatchX, testBatchY = generateTFbatch(test_x, test_y, batchSize)
+		testBatchX, testBatchY = ANNtf2_operations.generateTFbatch(test_x, test_y, batchSize)
 		
-		shuffleSize = datasetNumExamples	#heuristic: 10*batchSize
+		shuffleSize = datasetNumExamples
 
 		#new iteration method (only required for algorithm == "LREANN_expAUANN/LREANN_expCUANN"):	
 		datasetNumClassesActual = datasetNumClasses
@@ -747,8 +655,8 @@ def trainLRE():
 					executeLearningLREANN(batchX, batchY, networkIndex)
 				if(batchIndex % displayStep == 0):
 					pred = neuralNetworkPropagation(batchX, networkIndex)
-					loss = calculateLossCrossEntropy(pred, batchYactual, datasetNumClasses, costCrossEntropyWithLogits)
-					acc = calculateAccuracy(pred, batchYactual)
+					loss = ANNtf2_operations.calculateLossCrossEntropy(pred, batchYactual, datasetNumClasses, costCrossEntropyWithLogits)
+					acc = ANNtf2_operations.calculateAccuracy(pred, batchYactual)
 					print("networkIndex: %i, batchIndex: %i, loss: %f, accuracy: %f" % (networkIndex, batchIndex, loss, acc))
 					predNetworkAverage = predNetworkAverage + pred
 
@@ -766,7 +674,7 @@ def trainLRE():
 					trainDataIndex = currentClassTarget
 
 		pred = neuralNetworkPropagationTest(testBatchX, networkIndex)
-		print("Test Accuracy: networkIndex: %i, %f" % (networkIndex, calculateAccuracy(pred, testBatchY)))
+		print("Test Accuracy: networkIndex: %i, %f" % (networkIndex, ANNtf2_operations.calculateAccuracy(pred, testBatchY)))
 
 def generateRandomisedIndexArray(indexFirst, indexLast, arraySize=None):
 	fileIndexArray = np.arange(indexFirst, indexLast+1, 1)
@@ -784,8 +692,4 @@ def generateRandomisedIndexArray(indexFirst, indexLast, arraySize=None):
 if __name__ == "__main__":
 	if(algorithm == "LREANN"):
 		trainLRE()
-	elif(algorithm == "LIANN"):
-		if(trainMultipleNetworks):
-			train(trainMultipleNetworks=trainMultipleNetworks)
-		else:
-			trainMinimal()
+			

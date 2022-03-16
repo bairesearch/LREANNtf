@@ -137,7 +137,7 @@ import tensorflow as tf
 import numpy as np
 from numpy import genfromtxt
 import ANNtf2_globalDefs
-from nltk import tokenize
+#from nltk import tokenize	#required for ANNtf2_loadDataset loadDatasetType4 only
 import re
 
 datasetFolderRelative = "datasets"
