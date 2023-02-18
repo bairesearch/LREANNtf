@@ -72,6 +72,8 @@ else:
 		numberOfSubsetsTrialledPerBaseParameter = 1
 		parameterUpdateSubsetSize = 1	
 
+normaliseFirstLayer = False
+equaliseNumberExamplesPerClass = False
 	
 	
 

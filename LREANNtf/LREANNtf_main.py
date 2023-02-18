@@ -15,6 +15,7 @@ conda install -c tensorflow tensorflow=2.3
 conda install scikit-learn (ANNtf2_algorithmLIANN_math:SVD/PCA only)
 
 # Usage:
+source activate anntf2
 python3 LREANNtf_main.py
 
 # Description:
@@ -53,6 +54,7 @@ if(algorithm == "LREANN"):
 	#algorithmLREANN = "LREANN_expXUANN"	#incomplete
 	#algorithmLREANN = "LREANN_expMUANN"	#incomplete+non-convergent
 	algorithmLREANN = "LREANN_expRUANN"
+	#algorithmLREANN = "LREANN_expNUANN"
 	if(algorithmLREANN == "LREANN_expHUANN"):
 		import LREANNtf_algorithmLREANN_expHUANN as LREANNtf_algorithm
 	elif(algorithmLREANN == "LREANN_expSUANN"):
@@ -70,7 +72,9 @@ if(algorithm == "LREANN"):
 		import LREANNtf_algorithmLREANN_expMUANN as LREANNtf_algorithm		
 	elif(algorithmLREANN == "LREANN_expRUANN"):
 		import LREANNtf_algorithmLREANN_expRUANN as LREANNtf_algorithm
-							
+	elif(algorithmLREANN == "LREANN_expNUANN"):
+		import LREANNtf_algorithmLREANN_expNUANN as LREANNtf_algorithm
+									
 #learningRate, trainingSteps, batchSize, displayStep, numEpochs = -1
 
 #performance enhancements for development environment only: 
@@ -190,6 +194,10 @@ def executeLearningLREANN(x, y, networkIndex=1):
 	elif(algorithmLREANN == "LREANN_expRUANN"):
 		#learning algorithm: in reverse order, stochastically establishing Aideal of each layer (by temporarily biasing firing rate of neurons) to better achieve Aideal of higher layer (through multiple local/single layer forward propagations), then (simultaneous/parallel layer processing) stochastically adjusting weights to fine tune towards Aideal of their higher layers
 		pred = LREANNtf_algorithm.neuralNetworkPropagationLREANN_expRUANNtrain(x, y, networkIndex)
+	elif(algorithmLREANN == "LREANN_expNUANN"):
+		#learning algorithm: normalise neural activation (on/off) across neurons
+		pred = LREANNtf_algorithm.neuralNetworkPropagationLREANN_expNUANNtrain(x, y, networkIndex)
+
 def executeLearningLREANN_expAUANN(x, y, exemplarsX, exemplarsY, currentClassTarget, networkIndex=1):
 	#learning algorithm embedded in forward propagation of new class x experience following forward propagation of existing class x experience
 	pred = LREANNtf_algorithm.neuralNetworkPropagationLREANN_expAUANNtrain(x, y, exemplarsX, exemplarsY, currentClassTarget, networkIndex)
@@ -199,15 +207,26 @@ def executeLearningLREANN_expXUANN(x, y, samplePositiveX, samplePositiveY, sampl
 
 			
 
-#def executeLearningLREANN(e, batchIndex, x, y, networkIndex):
-#	pred = LREANNtf_algorithm.neuralNetworkPropagationLREANNtrainIntro(x, y, networkIndex)
-		
-#parameter l is only currently used for algorithm AEANN
 def executeOptimisation(x, y, datasetNumClasses, numberOfLayers, optimizer, networkIndex=1, l=None):
 	with tf.GradientTape() as gt:
 		loss, acc = calculatePropagationLoss(x, y, datasetNumClasses, numberOfLayers, costCrossEntropyWithLogits, networkIndex, l)
 		
-	if(algorithm == "LREANN"):
+	if(algorithmLREANN == "LREANN_expNUANN"):
+		Wlist = []
+		Blist = []
+		for l1 in range(1, numberOfLayers+1):
+			trainLayer = True
+			if(LREANNtf_algorithm.onlyTrainFinalLayer):
+				trainLayer = False
+				if(l == numberOfLayers):
+					trainLayer = True
+			if(trainLayer):	
+				Wlist.append(LREANNtf_algorithm.W[ANNtf2_operations.generateParameterNameNetwork(networkIndex, l1, "W")])
+				Blist.append(LREANNtf_algorithm.B[ANNtf2_operations.generateParameterNameNetwork(networkIndex, l1, "B")])
+		trainableVariables = Wlist + Blist
+		WlistLength = len(Wlist)
+		BlistLength = len(Blist)	
+	else:
 		print("executeOptimisation error: algorithm LREANN not supported, use executeLearningLREANN() instead")
 		exit()
 			
@@ -221,7 +240,64 @@ def executeOptimisation(x, y, datasetNumClasses, numberOfLayers, optimizer, netw
 			])
 	else:
 		optimizer.apply_gradients(zip(gradients, trainableVariables))
-		
+
+	if(algorithmLREANN == "LREANN_expNUANN"):
+		if(LREANNtf_algorithm.applyNeuronThresholdBias):
+			if(LREANNtf_algorithm.zeroParametersIfViolateEItypeCondition):
+				#set all W/B parameters to zero if their updated values violate the E/I neuron type condition
+				for l in range(1, numberOfLayers+1):
+					zeroParameterIfViolateEItypeCondition(LREANNtf_algorithm.W, "W", True, networkIndex, l)
+					if(constrainBiasesCheck(l)):
+						zeroParameterIfViolateEItypeCondition(LREANNtf_algorithm.B, "B", True, networkIndex, l)				
+			if(LREANNtf_algorithm.verifyParametersDoNotViolateEItypeCondition):
+				#excitatory/inhibitory weight verification (in accordance with neuron types):	
+				for l in range(1, numberOfLayers+1):
+					verifyParameterDoNotViolateEItypeCondition(LREANNtf_algorithm.W, "W", True, networkIndex, l)
+					if(constrainBiasesCheck(l)):
+						verifyParameterDoNotViolateEItypeCondition(LREANNtf_algorithm.B, "B", True, networkIndex, l)
+
+def constrainBiasesCheck(l):
+	result = False
+	if(LREANNtf_algorithm.constrainBiases and (LREANNtf_algorithm.constrainBiasesLastLayer or (l < numberOfLayers))):
+		result = True
+	return result
+							
+def zeroParameterIfViolateEItypeCondition(param, paramName, paramSignExpected, networkIndex, l):
+
+	Wlayer = param[ANNtf2_operations.generateParameterNameNetwork(networkIndex, l, paramName)]
+	WlayerSign = tf.sign(Wlayer)
+	WlayerSignBool = ANNtf2_operations.convertSignOutputToBool(WlayerSign)
+
+	WlayerSignCheck = tf.equal(WlayerSignBool, paramSignExpected)
+
+	#ignore 0.0 values in W/B arrays:
+	WlayerSignCheck = tf.logical_or(WlayerSignCheck, tf.equal(WlayerSign, 0.0))
+
+	WlayerCorrected = tf.where(WlayerSignCheck, Wlayer, 0.0)
+
+	param[ANNtf2_operations.generateParameterNameNetwork(networkIndex, l, paramName)] = tf.Variable(WlayerCorrected)
+					
+def verifyParameterDoNotViolateEItypeCondition(param, paramName, paramSignExpected, networkIndex, l):
+
+	Wlayer = param[ANNtf2_operations.generateParameterNameNetwork(networkIndex, l, paramName)]
+	WlayerSign = tf.sign(Wlayer)
+	WlayerSignBool = ANNtf2_operations.convertSignOutputToBool(WlayerSign)
+
+	WlayerSignCheck = tf.equal(WlayerSignBool, paramSignExpected)
+
+	#ignore 0.0 values in W/B arrays:
+	WlayerSignCheck = tf.logical_or(WlayerSignCheck, tf.equal(WlayerSign, 0.0))
+
+	WlayerSignCheck = tf.math.reduce_all(WlayerSignCheck).numpy()
+
+	#print("WlayerSignCheck = ", WlayerSignCheck)	   
+	#print("Wlayer = ", Wlayer)	   
+
+	if(not WlayerSignCheck):
+	   print("!WlayerSignCheck, l = ", l)
+	   print("Wlayer = ", Wlayer)
+	   exit()		
+	   		
 
 def calculatePropagationLoss(x, y, datasetNumClasses, numberOfLayers, costCrossEntropyWithLogits, networkIndex=1, l=None):
 	
@@ -230,11 +306,7 @@ def calculatePropagationLoss(x, y, datasetNumClasses, numberOfLayers, costCrossE
 	target = y
 	loss = ANNtf2_operations.calculateLossCrossEntropy(pred, target, datasetNumClasses, costCrossEntropyWithLogits)	
 	acc = ANNtf2_operations.calculateAccuracy(pred, target)	#only valid for softmax class targets 
-	#print("x = ", x)
-	#print("y = ", y)
-	#print("2 loss = ", loss)
-	#print("2 acc = ", acc)
-			
+
 	return loss, acc
 
 
@@ -304,7 +376,7 @@ def calculatePropagationLossAllNetworksFinalLayer(x, y, datasetNumClasses, costC
 	
 	
 		
-def loadDataset(fileIndex):
+def loadDataset(fileIndex, equaliseNumberExamplesPerClass=False, normalise=False):
 
 	global numberOfFeaturesPerWord
 	global paddingTagIndex
@@ -328,20 +400,20 @@ def loadDataset(fileIndex):
 			
 	numberOfLayers = 0
 	if(dataset == "POStagSequence"):
-		numberOfFeaturesPerWord, paddingTagIndex, datasetNumFeatures, datasetNumClasses, datasetNumExamples, train_xTemp, train_yTemp, test_xTemp, test_yTemp = ANNtf2_loadDataset.loadDatasetType1(datasetType1FileNameX, datasetType1FileNameY)
+		numberOfFeaturesPerWord, paddingTagIndex, datasetNumFeatures, datasetNumClasses, datasetNumExamples, train_x, train_y, test_x, test_y = ANNtf2_loadDataset.loadDatasetType1(datasetType1FileNameX, datasetType1FileNameY, normalise=normalise)
 	elif(dataset == "POStagSentence"):
-		numberOfFeaturesPerWord, paddingTagIndex, datasetNumFeatures, datasetNumClasses, datasetNumExamples, train_xTemp, train_yTemp, test_xTemp, test_yTemp = ANNtf2_loadDataset.loadDatasetType3(datasetType3FileNameX, generatePOSunambiguousInput, onlyAddPOSunambiguousInputToTrain, useSmallSentenceLengths)
+		numberOfFeaturesPerWord, paddingTagIndex, datasetNumFeatures, datasetNumClasses, datasetNumExamples, train_x, train_y, test_x, test_y = ANNtf2_loadDataset.loadDatasetType3(datasetType3FileNameX, generatePOSunambiguousInput, onlyAddPOSunambiguousInputToTrain, useSmallSentenceLengths, normalise=normalise)
 	elif(dataset == "SmallDataset"):
-		datasetNumFeatures, datasetNumClasses, datasetNumExamples, train_xTemp, train_yTemp, test_xTemp, test_yTemp = ANNtf2_loadDataset.loadDatasetType2(datasetType2FileName, datasetClassColumnFirst)
+		datasetNumFeatures, datasetNumClasses, datasetNumExamples, train_x, train_y, test_x, test_y = ANNtf2_loadDataset.loadDatasetType2(datasetType2FileName, datasetClassColumnFirst, equaliseNumberExamplesPerClass=equaliseNumberExamplesPerClass, normalise=normalise)
 		numberOfFeaturesPerWord = None
 		paddingTagIndex = None
 	elif(dataset == "wikiXmlDataset"):
-		articles = ANNtf2_loadDataset.loadDatasetType4(datasetType4FileName, AEANNsequentialInputTypesMaxLength, useSmallSentenceLengths, AEANNsequentialInputTypeMinWordVectors)
-
+		articles = ANNtf2_loadDataset.loadDatasetType4(datasetType4FileName, sequentialInputTypesMaxLength, useSmallSentenceLengths, sequentialInputTypeTrainWordVectors)
+	
 	if(dataset == "wikiXmlDataset"):
 		return articles
 	else:
-		return numberOfFeaturesPerWord, paddingTagIndex, datasetNumFeatures, datasetNumClasses, datasetNumExamples, train_xTemp, train_yTemp, test_xTemp, test_yTemp
+		return numberOfFeaturesPerWord, paddingTagIndex, datasetNumFeatures, datasetNumClasses, datasetNumExamples, train_x, train_y, test_x, test_y
 		
 
 
@@ -352,7 +424,7 @@ def trainMinimal():
 	fileIndexTemp = 0	#assert trainMultipleFiles = False
 	
 	#generate network parameters based on dataset properties:
-	numberOfFeaturesPerWord, paddingTagIndex, datasetNumFeatures, datasetNumClasses, datasetNumExamplesTemp, train_xTemp, train_yTemp, test_xTemp, test_yTemp = loadDataset(fileIndexTemp)
+	numberOfFeaturesPerWord, paddingTagIndex, datasetNumFeatures, datasetNumClasses, datasetNumExamplesTemp, train_xTemp, train_yTemp, test_xTemp, test_yTemp = loadDataset(fileIndexTemp, equaliseNumberExamplesPerClass=LREANNtf_algorithm.equaliseNumberExamplesPerClass, normalise=LREANNtf_algorithm.normaliseFirstLayer)
 
 	#Model constants
 	num_input_neurons = datasetNumFeatures  #train_x.shape[1]
@@ -370,7 +442,7 @@ def trainMinimal():
 		print("epoch e = ", e)
 	
 		fileIndex = 0
-		numberOfFeaturesPerWord, paddingTagIndex, datasetNumFeatures, datasetNumClasses, datasetNumExamples, train_x, train_y, test_x, test_y = loadDataset(fileIndex)
+		numberOfFeaturesPerWord, paddingTagIndex, datasetNumFeatures, datasetNumClasses, datasetNumExamples, train_x, train_y, test_x, test_y = loadDataset(fileIndex, equaliseNumberExamplesPerClass=LREANNtf_algorithm.equaliseNumberExamplesPerClass, normalise=LREANNtf_algorithm.normaliseFirstLayer)
 
 		shuffleSize = datasetNumExamples
 		trainDataIndex = 0
@@ -403,7 +475,7 @@ def train(trainMultipleNetworks=False, trainMultipleFiles=False, greedy=False):
 	fileIndexTemp = 0	#assert trainMultipleFiles = False
 	
 	#generate network parameters based on dataset properties:
-	numberOfFeaturesPerWord, paddingTagIndex, datasetNumFeatures, datasetNumClasses, datasetNumExamplesTemp, train_xTemp, train_yTemp, test_xTemp, test_yTemp = loadDataset(fileIndexTemp)
+	numberOfFeaturesPerWord, paddingTagIndex, datasetNumFeatures, datasetNumClasses, datasetNumExamplesTemp, train_xTemp, train_yTemp, test_xTemp, test_yTemp = loadDataset(fileIndexTemp, equaliseNumberExamplesPerClass=LREANNtf_algorithm.equaliseNumberExamplesPerClass, normalise=LREANNtf_algorithm.normaliseFirstLayer)
 
 	#Model constants
 	num_input_neurons = datasetNumFeatures  #train_x.shape[1]
@@ -446,7 +518,7 @@ def train(trainMultipleNetworks=False, trainMultipleFiles=False, greedy=False):
 			else:
 				fileIndex = f
 				
-			numberOfFeaturesPerWord, paddingTagIndex, datasetNumFeatures, datasetNumClasses, datasetNumExamples, train_x, train_y, test_x, test_y = loadDataset(fileIndex)
+			numberOfFeaturesPerWord, paddingTagIndex, datasetNumFeatures, datasetNumClasses, datasetNumExamples, train_x, train_y, test_x, test_y = loadDataset(fileIndex, equaliseNumberExamplesPerClass=LREANNtf_algorithm.equaliseNumberExamplesPerClass, normalise=LREANNtf_algorithm.normaliseFirstLayer)
 
 			shuffleSize = datasetNumExamples
 			trainDataIndex = 0
@@ -498,7 +570,7 @@ def trainLRE():
 	networkIndex = 1
 	
 	fileIndexTemp = 0	
-	numberOfFeaturesPerWord, paddingTagIndex, datasetNumFeatures, datasetNumClasses, datasetNumExamplesTemp, train_xTemp, train_yTemp, test_xTemp, test_yTemp = loadDataset(fileIndexTemp)
+	numberOfFeaturesPerWord, paddingTagIndex, datasetNumFeatures, datasetNumClasses, datasetNumExamplesTemp, train_xTemp, train_yTemp, test_xTemp, test_yTemp = loadDataset(fileIndexTemp, equaliseNumberExamplesPerClass=LREANNtf_algorithm.equaliseNumberExamplesPerClass, normalise=LREANNtf_algorithm.normaliseFirstLayer)
 
 	#Model constants
 	num_input_neurons = datasetNumFeatures  #train_x.shape[1]
@@ -513,8 +585,8 @@ def trainLRE():
 									
 	noisySampleGeneration = False
 	if(algorithm == "LREANN"):
-		noisySampleGeneration, noisySampleGenerationNumSamples, noiseStandardDeviation = LREANNtf_algorithm.getNoisySampleGenerationNumSamples()
-		if(noisySampleGeneration):
+		if(LREANNtf_algorithm.noisySampleGeneration):
+			noisySampleGeneration, noisySampleGenerationNumSamples, noiseStandardDeviation = LREANNtf_algorithm.getNoisySampleGenerationNumSamples()
 			batchXmultiples = tf.constant([noisySampleGenerationNumSamples, 1], tf.int32)
 			batchYmultiples = tf.constant([noisySampleGenerationNumSamples], tf.int32)
 			randomNormal = tf.initializers.RandomNormal()	#tf.initializers.RandomUniform(minval=-1, maxval=1)
@@ -528,7 +600,7 @@ def trainLRE():
 
 		fileIndex = 0
 
-		numberOfFeaturesPerWord, paddingTagIndex, datasetNumFeatures, datasetNumClasses, datasetNumExamples, train_x, train_y, test_x, test_y = loadDataset(fileIndex)
+		numberOfFeaturesPerWord, paddingTagIndex, datasetNumFeatures, datasetNumClasses, datasetNumExamples, train_x, train_y, test_x, test_y = loadDataset(fileIndex, equaliseNumberExamplesPerClass=LREANNtf_algorithm.equaliseNumberExamplesPerClass, normalise=LREANNtf_algorithm.normaliseFirstLayer)
 
 		testBatchX, testBatchY = ANNtf2_operations.generateTFbatch(test_x, test_y, batchSize)
 		
@@ -629,8 +701,6 @@ def trainLRE():
 				#print("batchX = ", batchX)
 				#print("batchY = ", batchY)
 
-			predNetworkAverage = tf.Variable(tf.zeros(datasetNumClasses))
-
 			#print("datasetNumClasses = ", datasetNumClasses)
 			#print("batchX.shape = ", batchX.shape)
 			#print("batchY.shape = ", batchY.shape)
@@ -653,12 +723,14 @@ def trainLRE():
 					executeLearningLREANN(batchX, batchY, networkIndex)
 				elif(algorithmLREANN == "LREANN_expRUANN"):
 					executeLearningLREANN(batchX, batchY, networkIndex)
+				elif(algorithmLREANN == "LREANN_expNUANN"):
+					if(not LREANNtf_algorithm.trainBackprop):
+						executeLearningLREANN(batchX, batchY, networkIndex)
+					executeOptimisation(batchX, batchY, datasetNumClasses, numberOfLayers, optimizer, networkIndex)
+
 				if(batchIndex % displayStep == 0):
-					pred = neuralNetworkPropagation(batchX, networkIndex)
-					loss = ANNtf2_operations.calculateLossCrossEntropy(pred, batchYactual, datasetNumClasses, costCrossEntropyWithLogits)
-					acc = ANNtf2_operations.calculateAccuracy(pred, batchYactual)
+					loss, acc = calculatePropagationLoss(batchX, batchYactual, datasetNumClasses, numberOfLayers, costCrossEntropyWithLogits, networkIndex)
 					print("networkIndex: %i, batchIndex: %i, loss: %f, accuracy: %f" % (networkIndex, batchIndex, loss, acc))
-					predNetworkAverage = predNetworkAverage + pred
 
 			if(algorithm == "LREANN"):
 				if(algorithmLREANN == "LREANN_expAUANN"):

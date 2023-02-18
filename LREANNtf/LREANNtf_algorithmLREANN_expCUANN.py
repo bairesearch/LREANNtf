@@ -76,7 +76,8 @@ if(biologicalConstraints):
 else:
 	useBinaryWeights = False
 
-	
+normaliseFirstLayer = False
+equaliseNumberExamplesPerClass = False	
 	
 
 W = {}

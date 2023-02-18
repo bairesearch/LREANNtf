@@ -116,6 +116,10 @@ if(enableForgetting):
 			enableForgettingRestrictToAPrevAndNotAConnections = True	#optional	#True	#this ensures that only connections between active lower layer neurons and unactive higher layer neurons are suppressed
 			enableForgettingRestrictToNotAPrevAndAConnections = False 	#required
 
+normaliseFirstLayer = False
+equaliseNumberExamplesPerClass = False
+
+
 W = {}
 B = {}
 if(sparseConnections):
